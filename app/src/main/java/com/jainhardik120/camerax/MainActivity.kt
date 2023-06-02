@@ -9,14 +9,15 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageAnalysis.Analyzer
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.camera.core.Preview
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,14 +34,16 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
 import com.jainhardik120.camerax.ui.theme.CameraXTheme
-import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.Executors
 
 typealias LumaListener = (luma: Double) -> Unit
 
+@ExperimentalGetImage
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,10 +59,12 @@ class MainActivity : ComponentActivity() {
                         Box(modifier = Modifier.fillMaxSize()){
                             SimpleCameraPreview(imageCapture, ImageAnalysis.Builder()
                                 .build().also {
-                                    it.setAnalyzer(cameraExecutor, LuminosityAnalyzer{
+                                    it.setAnalyzer(
+                                        cameraExecutor, LuminosityAnalyzer()/*{
                                         luma->
 //                                        Log.d("TAG", "onCreate: $luma")
-                                    })
+                                    }*/
+                                    )
                                 })
                             Button(onClick = {
                                 val name = SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SSS", Locale.US).format(System.currentTimeMillis())
@@ -99,24 +104,52 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private class LuminosityAnalyzer(private val listener : LumaListener) : ImageAnalysis.Analyzer{
+    @ExperimentalGetImage
+    private class LuminosityAnalyzer(/*private val listener : LumaListener*/) : Analyzer {
 
-        private fun ByteBuffer.toByteArray() : ByteArray{
-            rewind()
-            val data = ByteArray(remaining())
-            get(data)
-            return data
-        }
+//        private fun ByteBuffer.toByteArray() : ByteArray{
+//            rewind()
+//            val data = ByteArray(remaining())
+//            get(data)
+//            return data
+//        }
 
-        override fun analyze(image: ImageProxy) {
-            val buffer = image.planes[0].buffer
-            val data = buffer.toByteArray()
-            val pixels = data.map{
-                it.toInt() and 0xFF
+        override fun analyze(imageProxy: ImageProxy) {
+//            val buffer = image.planes[0].buffer
+//            val data = buffer.toByteArray()
+//            val pixels = data.map{
+//                it.toInt() and 0xFF
+//            }
+//            val luma = pixels.average()
+//            listener(luma)
+//            image.close()
+            val mediaImage = imageProxy.image
+            val TAG = "Barcode Scanned Tag"
+            if (mediaImage != null) {
+                val myImage =
+                    InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+                val scanner = BarcodeScanning.getClient()
+                val result = scanner.process(myImage)
+                    .addOnSuccessListener { barcodes ->
+//                        Log.d("TAG", "analyze: $barcodes")
+                        Log.d(TAG, "analyze: New Series Start")
+                        for (barcode in barcodes) {
+//                            val bounds = barcode.boundingBox
+//                            val corners = barcode.cornerPoints
+//                            val rawValues = barcode.rawValue
+//                            val valueType = barcode.valueType
+                            Log.d(TAG, "analyze: ${barcode.rawValue}")
+//                            when(valueType){
+//                                Barcode.TYPE_TEXT->{
+//                                    Log.d(TAG, "analyze: ${barcode.rawValue}")
+//                                }
+//                            }
+                        }
+                    }.addOnFailureListener { exception ->
+                        Log.d("TAG", "analyze: ${exception.message}")
+                    }
             }
-            val luma = pixels.average()
-            listener(luma)
-            image.close()
+            imageProxy.close()
         }
     }
 }
@@ -139,7 +172,7 @@ fun SimpleCameraPreview(
                     it.setSurfaceProvider(previewView.surfaceProvider)
                 }
                 val cameraSelector = CameraSelector.Builder()
-                    .requireLensFacing(CameraSelector.LENS_FACING_FRONT)
+                    .requireLensFacing(CameraSelector.LENS_FACING_BACK)
                     .build()
                 cameraProvider.unbindAll()
                 cameraProvider.bindToLifecycle(
